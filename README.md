@@ -11,7 +11,7 @@ Example:
     make
     erl -pa ebin/ deps/**/ebin/
     {ok, C} = edisque:start_link().
-    edisque:add_job(Client, <<"queue">>, <<"body">>).
+    edisque:add_job(C, <<"queue">>, <<"body">>, 0).
     edisque:get_job(C, [<<"queue">>]).
 
 ## Dependencies
