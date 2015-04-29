@@ -32,6 +32,13 @@ init([Hosts]) ->
             {stop, {connection_error, Reason}}
     end.
 
+handle_call({request, Command, Timeout}, _From, State = #state{eredis_client = Client}) ->
+    Resp = eredis:q(Client, Command, Timeout),
+    {reply, Resp, State};
+handle_call({get_job, Options, Queues}, _From, State = #state{eredis_client = Client}) ->
+    Resp = eredis:q(Client, [<<"GETJOB">>] ++ Options ++ [<<"FROM">>] ++ Queues),
+    {reply, Resp, State};
+
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
@@ -62,12 +69,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 
 shuffle(List) ->
-    io:format("list is ~p~n", [List]),
     [X||{_,X} <- lists:sort([ {random:uniform(), N} || N <- List])].
 
 clear_stats(Client) ->
-    _Stats = dict:new(),
-    io:format("~p~n", [eredis:q(Client, [<<"HELLO">>])]).
+    Stats = dict:new(),
+    %io:format("~p~n", [eredis:q(Client, [<<"HELLO">>])]),
+    Stats.
 
 connect(Hosts) ->
     RHosts = shuffle(Hosts),

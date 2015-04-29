@@ -15,7 +15,7 @@ q(Client, Command) ->
     q(Client, Command, ?TIMEOUT).
 
 q(Client, Command, Timeout) ->
-    eredis:q(Client, Command, Timeout).
+    gen_server:call(Client, {request, Command, Timeout}).
 
 %% ADDJOB syntax is:
 %%
@@ -31,7 +31,6 @@ add_job(Client, Queue, Job, Timeout) ->
     add_job(Client, Queue, Job, Timeout, []).
 
 add_job(Client, Queue, Job, Timeout, Options) ->
-    io:format("~p~n", [[<<"ADDJOB">>, Queue, Job, Timeout] ++ Options]),
     q(Client, [<<"ADDJOB">>, Queue, Job, Timeout] ++ Options).
 
 
@@ -42,10 +41,10 @@ add_job(Client, Queue, Job, Timeout, Options) ->
 %%         FROM queue1 queue2 ... queueN
 %%
 get_job(Client, Queues) ->
-    get_job(Client, Queues, []).
+    gen_server:call(Client, {get_job, [], Queues}).
 
 get_job(Client, Queues, Options) ->
-    q(Client, [<<"GETJOB">>] ++ Options ++ [<<"FROM">>] ++ Queues).
+    gen_server:call(Client, {get_job, Options, Queues}).
 
 ack_job(Client, Jobs) ->
     q(Client, [<<"ACKJOB">>] ++ Jobs).
