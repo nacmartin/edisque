@@ -11,7 +11,7 @@
          terminate/2, code_change/3]).
 
 %% exported only for testing
--export([parse_hello_hosts/1]).
+-export([parse_hello_hosts/1, clear_stats/1]).
 
 -record(state, {
           hosts :: list() | undefined,
@@ -46,6 +46,7 @@ handle_call({request, Command, Timeout}, _From, State = #state{eredis_client = C
     {reply, Resp, State};
 handle_call({get_job, Options, Queues}, _From, State = #state{eredis_client = Client}) ->
     Resp = eredis:q(Client, [<<"GETJOB">>] ++ Options ++ [<<"FROM">>] ++ Queues),
+    % TODO: Increment counter, increment stats, pick new client if cyle is over needed
     {reply, Resp, State};
 
 handle_call(stop, _From, State) ->
@@ -80,21 +81,23 @@ code_change(_OldVsn, State, _Extra) ->
 shuffle(List) ->
     [X||{_,X} <- lists:sort([ {random:uniform(), N} || N <- List])].
 
-clear_stats(Client) ->
-    Stats = dict:new(),
+
+get_hosts(Client) ->
     {ok, RawHello} = eredis:q(Client, [<<"HELLO">>]),
-    Hosts = parse_hello_hosts(RawHello),
-    %io:format("~p~n", [eredis:q(Client, [<<"HELLO">>])]),
-    Stats.
+    parse_hello_hosts(RawHello).
+
+clear_stats(Hosts) ->
+    [{Host, 0}||{Host,_} <- Hosts].
 
 connect(Hosts) ->
     RHosts = shuffle(Hosts),
     case try_connect_by_order(RHosts) of
         {ok, Client} ->
-            Stats = clear_stats(Client),
-            {ok, #state{hosts = Hosts,
-                   eredis_client = Client,
-                   stats = Stats}};
+            Hosts1 = get_hosts(Client),
+            Stats = dict:from_list(clear_stats(Hosts1)),
+            {ok, #state{hosts = dict:from_list(Hosts1),
+                        eredis_client = Client,
+                        stats = Stats}};
         undefined ->
             {error, <<"Disque client failed to connect to any supplied host">>}
     end.
