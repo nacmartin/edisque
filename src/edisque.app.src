@@ -1,0 +1,7 @@
+{application, edisque, [
+    {description, "Erlang Disque Client"},
+    {vsn, "0.1"},
+    {modules, [edisque]},
+    {registered, []},
+    {applications, [kernel, stdlib]}
+]}.
