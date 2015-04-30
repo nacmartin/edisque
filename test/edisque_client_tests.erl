@@ -8,8 +8,8 @@ parse_hosts_test() ->
                                              <<"7712">>,<<"1">>],
                                             [<<"851a7a1416b0cf0474146d6a6d3555cb1ebeee50">>,<<"127.0.0.1">>,
                                              <<"7711">>,<<"1">>]]),
-    ?assertEqual([{<<"e890eef8">>, {<<"127.0.0.1">>,<<"7712">>}},
-                  {<<"851a7a14">>, {<<"127.0.0.1">>,<<"7711">>}}]
+    ?assertEqual([{<<"e890eef8">>, {"127.0.0.1",7712}},
+                  {<<"851a7a14">>, {"127.0.0.1",7711}}]
                  , Res).
 
 parse_current_host_test() ->
@@ -38,6 +38,26 @@ add_and_get_job_test() ->
     ?assertMatch({ok, _}, edisque:add_job(C, "queue", "body", 0)),
     ?assertMatch({ok, _}, edisque:get_job(C, ["queue"])).
 
+add_and_get_job_cycle_no_change_test() ->
+    Res = edisque:start_link([{"127.0.0.1", 7711}], 1),
+    ?assertMatch({ok, _}, Res),
+    {ok, C} = Res,
+    ?assertMatch({ok, _}, edisque:add_job(C, "queue", "body", 0)),
+    ?assertMatch({ok, _}, edisque:get_job(C, ["queue"])),
+    ?assertMatch({ok, _}, edisque:add_job(C, "queue", "body", 0)),
+    ?assertMatch({ok, _}, edisque:get_job(C, ["queue"])).
+
+add_and_get_job_cycle_test() ->
+    Res = edisque:start_link([{"127.0.0.1", 7711}], 1),
+    ?assertMatch({ok, _}, Res),
+    {ok, C} = Res,
+    Res1 = edisque:start_link([{"127.0.0.1", 7712}], 1),
+    ?assertMatch({ok, _}, Res1),
+    {ok, C1} = Res1,
+    ?assertMatch({ok, _}, edisque:add_job(C1, "queue", "body", 0)),
+    ?assertMatch({ok, _}, edisque:get_job(C, ["queue"])),
+    ?assertMatch({ok, _}, edisque:add_job(C1, "queue", "body", 0)),
+    ?assertMatch({ok, _}, edisque:get_job(C, ["queue"])).
 
 c() ->
     Res = edisque:start_link(),

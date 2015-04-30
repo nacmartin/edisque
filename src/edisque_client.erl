@@ -2,6 +2,7 @@
 -behaviour(gen_server).
 
 -define(DEFAULT_CYCLE, 1000).
+-include_lib("eunit/include/eunit.hrl").
 
 %% API
 -export([start_link/1, start_link/2, stop/1]).
@@ -45,12 +46,17 @@ init([Hosts, Cycle]) ->
 handle_call({request, Command, Timeout}, _From, State = #state{eredis_client = Client}) ->
     Resp = eredis:q(Client, Command, Timeout),
     {reply, Resp, State};
-handle_call({get_job, Options, Queues}, _From, State = #state{eredis_client = Client, stats = Stats}) ->
+handle_call({get_job, Options, Queues}, _From, State = #state{cycle = Cycle, eredis_client = Client, stats = Stats}) ->
     {ok, Resp} = eredis:q(Client, [<<"GETJOB">>] ++ Options ++ [<<"FROM">>] ++ Queues),
-    HostsFrom = get_host_short_ids(Resp),
-    Stats1 = update_stats(HostsFrom, Stats),
-    NewState = maybe_pick_client(Stats1, State),
-    {reply, {ok, Resp}, NewState};
+    case Cycle of
+        0 ->
+            {reply, {ok, Resp}, State};
+        _ ->
+            HostsFrom = get_host_short_ids(Resp),
+            Stats1 = update_stats(HostsFrom, Stats),
+            NewState = maybe_pick_client(Stats1, State),
+            {reply, {ok, Resp}, NewState}
+    end;
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
@@ -115,7 +121,7 @@ try_connect_by_order([{Host, Port}|Hosts]) ->
     end.
 
 parse_long_host(LongHost) ->
-    {binary:part(lists:nth(1, LongHost), 0, 8), {lists:nth(2, LongHost), lists:nth(3, LongHost)}}.
+    {binary:part(lists:nth(1, LongHost), 0, 8), {binary_to_list(lists:nth(2, LongHost)), list_to_integer(binary_to_list(lists:nth(3, LongHost)))}}.
 
 parse_hello_hosts(Raw) ->
     LongHosts = lists:dropwhile(fun(X) -> not is_list(X) end, Raw),
@@ -134,16 +140,25 @@ update_stats([Host|Hosts], Stats) ->
     update_stats(Hosts, Stats1).
 
 maybe_pick_client(Stats, State = #state{eredis_client = Client, current_host = CurrentHost, hosts = Hosts}) when State#state.cycle_count >= State#state.cycle ->
-    ReceivedHosts = proplists:get_keys(lists:keysort(2, dict:to_list(Stats))),
-    case lists:nth(1, ReceivedHosts) of
+
+    {BestHash, SortedHosts} = sort_hosts_from_stats(Hosts, Stats),
+    case BestHash of
         CurrentHost ->
             % We are connected to the best host
-            State#state{cycle_count = 0, stats = dict:from_list(clear_stats(Hosts))};
-        _BestHost ->
+            State#state{cycle_count = 0, stats = dict:from_list(clear_stats(dict:to_list(Hosts)))};
+        _ ->
             % There are best hosts, try to connect to them
-            {ok, NewClient} = try_connect_by_order(ReceivedHosts),
+            {ok, NewClient} = try_connect_by_order(SortedHosts),
             eredis:stop(Client),
-            State#state{eredis_client = NewClient, cycle_count = 0, stats = dict:from_list(clear_stats(Hosts))}
+            State#state{eredis_client = NewClient, cycle_count = 0, stats = dict:from_list(clear_stats(dict:to_list(Hosts)))}
     end;
 maybe_pick_client(Stats, State = #state{cycle_count = CycleCount}) ->
     State#state{cycle_count = CycleCount + 1, stats = Stats}.
+
+sort_hosts_from_stats(Hosts, Stats) ->
+    HostHashes = [Hash || {Hash, _Count} <- lists:reverse(lists:keysort(2, dict:to_list(Stats)))],
+    SortedHosts = lists:map(fun(Hash) ->
+                                    {ok, Host} = dict:find(Hash, Hosts),
+                                    Host
+                            end, HostHashes),
+    {lists:nth(1, HostHashes), SortedHosts}.

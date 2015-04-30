@@ -4,12 +4,21 @@
 %% Specified in http://www.erlang.org/doc/man/gen_server.html#call-3
 -define(TIMEOUT, 5000).
 
--export([start_link/0, q/2, q/3, add_job/4, add_job/5, get_job/2, get_job/3, ack_job/2, fast_ack_job/2]).
+-export([start_link/0, start_link/1, start_link/2, q/2, q/3, add_job/4, add_job/5, get_job/2, get_job/3, ack_job/2, fast_ack_job/2]).
 
+%%
+%% Long form is edisque:start_link(Hosts, Cycle), where Hosts is a list of tuples
+%% of the form {IP, Port} as in {"127.0.0.1", 7711}
+%% Cycle is the number of jobs to be retrieved before reconnecting to the best host,
+%% that is, the host node from which we are retrieving jobs more frequently.
+%% If Cycle is 0, this feature is disabled
+%%
 start_link() ->
     start_link([{"127.0.0.1", 7711}]).
 start_link(Hosts) ->
     edisque_client:start_link(Hosts).
+start_link(Hosts, Cycle) ->
+    edisque_client:start_link(Hosts, Cycle).
 
 q(Client, Command) ->
     q(Client, Command, ?TIMEOUT).
