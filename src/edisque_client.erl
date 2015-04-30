@@ -11,10 +11,11 @@
          terminate/2, code_change/3]).
 
 %% exported only for testing
--export([parse_hello_hosts/1, clear_stats/1]).
+-export([parse_hello_hosts/1, clear_stats/1, get_host_short_ids/1, parse_current_host/1]).
 
 -record(state, {
           hosts :: list() | undefined,
+          current_host :: binary() | undefined,
           cycle :: integer() | undefined,
           cycle_count :: integer() | undefined,
           eredis_client :: pid() | undefined,
@@ -44,10 +45,12 @@ init([Hosts, Cycle]) ->
 handle_call({request, Command, Timeout}, _From, State = #state{eredis_client = Client}) ->
     Resp = eredis:q(Client, Command, Timeout),
     {reply, Resp, State};
-handle_call({get_job, Options, Queues}, _From, State = #state{eredis_client = Client}) ->
-    Resp = eredis:q(Client, [<<"GETJOB">>] ++ Options ++ [<<"FROM">>] ++ Queues),
-    % TODO: Increment counter, increment stats, pick new client if cyle is over needed
-    {reply, Resp, State};
+handle_call({get_job, Options, Queues}, _From, State = #state{eredis_client = Client, stats = Stats}) ->
+    {ok, Resp} = eredis:q(Client, [<<"GETJOB">>] ++ Options ++ [<<"FROM">>] ++ Queues),
+    HostsFrom = get_host_short_ids(Resp),
+    Stats1 = update_stats(HostsFrom, Stats),
+    NewState = maybe_pick_client(Stats1, State),
+    {reply, {ok, Resp}, NewState};
 
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
@@ -84,7 +87,7 @@ shuffle(List) ->
 
 get_hosts(Client) ->
     {ok, RawHello} = eredis:q(Client, [<<"HELLO">>]),
-    parse_hello_hosts(RawHello).
+    {parse_current_host(RawHello), parse_hello_hosts(RawHello)}.
 
 clear_stats(Hosts) ->
     [{Host, 0}||{Host,_} <- Hosts].
@@ -93,9 +96,10 @@ connect(Hosts) ->
     RHosts = shuffle(Hosts),
     case try_connect_by_order(RHosts) of
         {ok, Client} ->
-            Hosts1 = get_hosts(Client),
+            {CurrentHost, Hosts1} = get_hosts(Client),
             Stats = dict:from_list(clear_stats(Hosts1)),
             {ok, #state{hosts = dict:from_list(Hosts1),
+                        current_host = CurrentHost,
                         eredis_client = Client,
                         stats = Stats}};
         undefined ->
@@ -116,3 +120,30 @@ parse_long_host(LongHost) ->
 parse_hello_hosts(Raw) ->
     LongHosts = lists:dropwhile(fun(X) -> not is_list(X) end, Raw),
     lists:map(fun parse_long_host/1, LongHosts).
+
+parse_current_host(HelloSpec) ->
+    binary:part(lists:nth(2, HelloSpec), 0, 8).
+
+get_host_short_ids(JobSpecs) ->
+    lists:map(fun(Spec) -> binary:part(lists:nth(2, Spec), 2, 8) end, JobSpecs).
+
+update_stats([], Stats) ->
+    Stats;
+update_stats([Host|Hosts], Stats) ->
+    Stats1 = dict:update_counter(Host, 1, Stats),
+    update_stats(Hosts, Stats1).
+
+maybe_pick_client(Stats, State = #state{eredis_client = Client, current_host = CurrentHost, hosts = Hosts}) when State#state.cycle_count >= State#state.cycle ->
+    ReceivedHosts = proplists:get_keys(lists:keysort(2, dict:to_list(Stats))),
+    case lists:nth(1, ReceivedHosts) of
+        CurrentHost ->
+            % We are connected to the best host
+            State#state{cycle_count = 0, stats = dict:from_list(clear_stats(Hosts))};
+        _BestHost ->
+            % There are best hosts, try to connect to them
+            {ok, NewClient} = try_connect_by_order(ReceivedHosts),
+            eredis:stop(Client),
+            State#state{eredis_client = NewClient, cycle_count = 0, stats = dict:from_list(clear_stats(Hosts))}
+    end;
+maybe_pick_client(Stats, State = #state{cycle_count = CycleCount}) ->
+    State#state{cycle_count = CycleCount + 1, stats = Stats}.
