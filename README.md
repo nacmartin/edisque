@@ -18,11 +18,11 @@ Example:
 
 ## Host cycling
 
-Every time edisque runs `GETJOB`, edisque update statistics of the Disque nodes that are producing the jobs that edisque is consuming. When a number of jobs is consumed (default is 1000), it will check the statistics to see if it can connect to a better node, and will do so if possible.
+Every time edisque runs `GETJOB`, edisque updates statistics of the Disque nodes that are producing the jobs that edisque is consuming. When a number of jobs is consumed (default is 1000), it will check the statistics to see if it can connect to a better node, and will do so if possible.
 
 For more information about this behaviour, check the [Disque](https://github.com/antirez/disque) documentation.
 
-When edisque is started with `edisque:start_link(Hosts, Cycle)`, where Hosts is a list of tuples of the form `{IP, Port}` as in `{"127.0.0.1", 7711}`, `Cycle` is the number of jobs to be retrieved before reconnecting to the best host, that is, the host node from which we are retrieving jobs more frequently.
+To configure the number of jobs consumed in a cycle, start edisque with `edisque:start_link(Hosts, Cycle)`, where Hosts is a list of tuples of the form `{IP, Port}` as in `{"127.0.0.1", 7711}`, and `Cycle` is the number of jobs consumed before looking for a better client.
 
 If `Cycle` is 0, this feature is disabled.
 
