@@ -1,6 +1,6 @@
 # edisque
 
-Disque client. Disque is an in-memory, distributed job queue.
+Erlang Disque client. Disque is an in-memory, distributed job queue.
 
 ## Example
 
